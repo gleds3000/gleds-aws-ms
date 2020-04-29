@@ -1,0 +1,70 @@
+image: docker:latest
+
+variables:
+  DOCKER_DRIVER: overlay2
+  REPOSITORY_URL: ${AWS_ECR_REPOSITORY}
+  REGION: ${AWS_DEFAULT_REGION}
+  
+  TASK_DEFINTION_NAME: comentarioapi-td
+  
+  CLUSTER_NAME: ${CLUSTER_NAME}
+  
+  SERVICE_NAME: serv-comentarioapi
+  
+  VAR_NAME: BUILD_NUMBER
+  TOKEN: ${CI_PIPELINE_IID_TOKEN}
+  GITLAB_URL: "https://gitlab.com"
+
+
+services:
+- docker:dind
+
+before_script:
+  - apk add --no-cache curl jq python py-pip
+  - pip install awscli
+  - $(aws ecr get-login --no-include-email --region "${REGION}")
+  - IMAGE_TAG="$(echo $CI_COMMIT_SHA | head -c 8)"
+  - apk add --update curl jq
+
+stages:
+  - init
+  - build-dev
+  - deploy-dev
+
+auto_increment:
+  stage: init
+
+  before_script:
+  
+  script:
+  - "VAR=$(curl -s -f  --header \"PRIVATE-TOKEN: ${TOKEN}\" \"${GITLAB_URL}/api/v4/projects/${CI_PROJECT_ID}/variables/${VAR_NAME}\" | jq  -r '.value' ) "
+  - let VAR=VAR+1
+  - "curl -s -f --request PUT --header \"PRIVATE-TOKEN: ${TOKEN}\" \"${GITLAB_URL}/api/v4/projects/${CI_PROJECT_ID}/variables/${VAR_NAME}\" --form \"value=${VAR}\" "
+  - echo ${VAR}
+    
+build_hom:
+  stage: build-dev
+  
+  script:
+    - export VERSION_NUMBER="0.0."  
+    - echo "Construindo a imagem..."
+    - docker build -f Dockerfile -t $REPOSITORY_URL:${VERSION_NUMBER}${BUILD_NUMBER} .
+    - echo "Colocando a Tag..."
+    - docker tag $REPOSITORY_URL:${VERSION_NUMBER}${BUILD_NUMBER} $REPOSITORY_URL:latest
+    - echo "Enviando para o ECR..."
+    - docker push $REPOSITORY_URL:${VERSION_NUMBER}${BUILD_NUMBER}
+    - docker push $REPOSITORY_URL:latest
+  only:
+    - master   
+deploy_dev:
+  stage: deploy-dev
+  script:
+    - echo "Iniciando deploy ASG Desenvolvimento"
+    
+    # Atualizando taskdefinition e o service 
+    - aws ecs register-task-definition --region  "${REGION}" --cli-input-json file://deploy.json >> temp.json
+    - REV=`grep  '"revision"' temp.json | awk '{print $2}'`
+    - echo $REV
+    - aws ecs update-service --cluster "${CLUSTER_NAME}"  --service "${SERVICE_NAME}" --task-definition "${TASK_DEFINTION_NAME}":${REV} --region "${REGION}"
+  only:
+   - master

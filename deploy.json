@@ -1,0 +1,30 @@
+{
+    "containerDefinitions": [{
+        "logConfiguration": {
+            "logDriver": "awslogs",
+            "options": {
+                "awslogs-group": "/ecs/comentario-td",
+                "awslogs-region": "us-east-1",
+                "awslogs-stream-prefix": "ecs"
+            }
+        },
+        "memory": 128,
+        "portMappings": [{
+            "hostPort": 80,
+            "containerPort": 3001,
+            "protocol": "tcp"
+        }],
+        "environment": [
+            {
+                "name": "API_NAME",
+                "value": "ComentariosAPI"
+            }
+        ],
+        "essential": true,
+        "name": "ComentarioApi-container",
+        "image": ".dkr.ecr.us-east-1.amazonaws.com/desafio/comentarioapi:latest",
+        "cpu": 100,
+        "memoryReservation": 128
+    }],
+    "family": "comentario-td"
+}
